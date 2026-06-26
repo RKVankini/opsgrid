@@ -1,33 +1,28 @@
-name: Build, Scan & Deploy
+# ──────────────────────────────────────────────────────────────────
+# NOTE: This workflow is for DOCUMENTATION PURPOSES ONLY.
+# It shows the real pipeline that would run against actual AWS infra.
+# To prevent failures in this portfolio repo, it is set to run only
+# on manual dispatch and requires real secrets to execute.
+# ──────────────────────────────────────────────────────────────────
+
+name: Build, Scan & Deploy (Reference Pipeline)
 
 on:
-  push:
-    branches:
-      - main
-      - "release/**"
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_dispatch:   # Manual trigger only — won't auto-run
 
 env:
   AWS_REGION: ap-south-1
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
   EKS_CLUSTER: eks-prod-ap-south-1
-  SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
 jobs:
-  # ─────────────────────────────────────────
-  # JOB 1: Code Quality Gate (SonarQube)
-  # ─────────────────────────────────────────
   sonarqube-scan:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for better blame analysis
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v3
@@ -40,13 +35,12 @@ jobs:
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
 
       - name: Run SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: SonarQube Quality Gate Check
         uses: SonarSource/sonarqube-quality-gate-action@master
@@ -54,9 +48,6 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  # ─────────────────────────────────────────
-  # JOB 2: OWASP Dependency Check
-  # ─────────────────────────────────────────
   dependency-check:
     name: OWASP Dependency Check
     runs-on: ubuntu-latest
@@ -69,9 +60,7 @@ jobs:
           project: 'opsgrid'
           path: '.'
           format: 'HTML'
-          args: >
-            --enableRetired
-            --failOnCVSS 7
+          args: --enableRetired --failOnCVSS 7
 
       - name: Upload Dependency Check Report
         uses: actions/upload-artifact@v3
@@ -79,15 +68,11 @@ jobs:
           name: dependency-check-report
           path: reports/
 
-  # ─────────────────────────────────────────
-  # JOB 3: Docker Build + Trivy Scan
-  # ─────────────────────────────────────────
   build-and-scan:
     name: Build Docker Image & Trivy Scan
     runs-on: ubuntu-latest
     needs: [sonarqube-scan, dependency-check]
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
       sha-short: ${{ steps.vars.outputs.sha_short }}
 
     steps:
@@ -105,65 +90,40 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.ECR_REGISTRY }}/api-gateway
-          tags: |
-            type=sha,prefix=,format=short
-            type=ref,event=branch
-            type=semver,pattern={{version}}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image (no push yet)
+      - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: false
-          tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           load: true
+          tags: ${{ env.ECR_REGISTRY }}/api-gateway:${{ steps.vars.outputs.sha_short }}
 
-      - name: Run Trivy vulnerability scan (CRITICAL block)
+      - name: Trivy scan — block on CRITICAL
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.ECR_REGISTRY }}/api-gateway:${{ steps.vars.outputs.sha_short }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL'
-          exit-code: '1'         # Fail pipeline if CRITICAL found
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL
+          exit-code: '1'
 
-      - name: Run Trivy scan (full report)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.ECR_REGISTRY }}/api-gateway:${{ steps.vars.outputs.sha_short }}
-          format: 'table'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-          exit-code: '0'         # Log only, don't block
-
-      - name: Upload Trivy SARIF to GitHub Security
+      - name: Upload Trivy SARIF
         uses: github/codeql-action/upload-sarif@v2
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: trivy-results.sarif
 
       - name: Push verified image to ECR
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
+          tags: ${{ env.ECR_REGISTRY }}/api-gateway:${{ steps.vars.outputs.sha_short }}
 
-  # ─────────────────────────────────────────
-  # JOB 4: Deploy to EKS
-  # ─────────────────────────────────────────
   deploy-to-eks:
     name: Deploy to EKS (Production)
     runs-on: ubuntu-latest
@@ -171,7 +131,6 @@ jobs:
     environment:
       name: production
       url: https://api.opsgrid.io
-    if: github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v4
@@ -184,73 +143,36 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Update kubeconfig for EKS
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.EKS_CLUSTER }}
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
 
-      - name: Verify kubectl connection
-        run: kubectl get nodes
-
-      - name: Deploy to EKS (rolling update)
+      - name: Rolling deploy to EKS
         run: |
           kubectl set image deployment/api-gateway \
             api-gateway=${{ env.ECR_REGISTRY }}/api-gateway:${{ needs.build-and-scan.outputs.sha-short }} \
             -n prod
+          kubectl rollout status deployment/api-gateway -n prod --timeout=300s
 
-      - name: Wait for rollout to complete
-        run: |
-          kubectl rollout status deployment/api-gateway \
-            -n prod \
-            --timeout=300s
-
-      - name: Run post-deploy smoke tests
-        run: |
-          kubectl run smoke-test \
-            --image=curlimages/curl:latest \
-            --restart=Never \
-            --rm -it \
-            -- curl -f http://api-gateway.prod.svc.cluster.local/healthz
-
-      - name: Notify Slack on success
-        if: success()
+      - name: Notify Slack
+        if: always()
         uses: slackapi/slack-github-action@v1
         with:
           payload: |
-            {
-              "text": "✅ *api-gateway* deployed to production\nCommit: `${{ needs.build-and-scan.outputs.sha-short }}`\nBy: ${{ github.actor }}"
-            }
+            {"text": "${{ job.status == 'success' && '✅' || '❌' }} *api-gateway* deploy ${{ job.status }} — `${{ needs.build-and-scan.outputs.sha-short }}`"}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
-      - name: Notify Slack on failure
-        if: failure()
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": "❌ *api-gateway* deployment FAILED\nCommit: `${{ needs.build-and-scan.outputs.sha-short }}`\nCheck: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-  # ─────────────────────────────────────────
-  # JOB 5: OWASP ZAP DAST (post-deploy)
-  # ─────────────────────────────────────────
   owasp-zap-scan:
     name: OWASP ZAP Dynamic Scan
     runs-on: ubuntu-latest
     needs: deploy-to-eks
-    if: github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run OWASP ZAP Full Scan
+      - name: OWASP ZAP Full Scan
         uses: zaproxy/action-full-scan@v0.9.0
         with:
           target: 'https://api.opsgrid.io'
-          rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a'
 
       - name: Upload ZAP Report

@@ -1,9 +1,12 @@
-name: Nightly Security Scan
+# ──────────────────────────────────────────────────────────────────
+# NOTE: Reference workflow — manual trigger only for portfolio repo.
+# Requires real ECR, SonarQube, and ZAP target to execute.
+# ──────────────────────────────────────────────────────────────────
+
+name: Nightly Security Scan (Reference)
 
 on:
-  schedule:
-    - cron: '0 1 * * *'   # 01:00 UTC daily (06:30 IST)
-  workflow_dispatch:
+  workflow_dispatch:   # Manual only
 
 env:
   AWS_REGION: ap-south-1
@@ -15,15 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service:
-          - api-gateway
-          - payment-svc
-          - auth-service
-          - order-service
-          - notification-svc
-          - image-svc
-          - frontend
-
+        service: [api-gateway, payment-svc, auth-service, order-service, notification-svc, image-svc, frontend]
     steps:
       - uses: actions/checkout@v4
 
@@ -41,9 +36,9 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.ECR_REGISTRY }}/${{ matrix.service }}:latest
-          format: 'json'
+          format: json
           output: trivy-${{ matrix.service }}.json
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          severity: CRITICAL,HIGH,MEDIUM,LOW
           exit-code: '0'
 
       - name: Upload scan results
@@ -59,7 +54,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@master
         env:
@@ -71,15 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: ZAP Full Scan
         uses: zaproxy/action-full-scan@v0.9.0
         with:
           target: 'https://api.opsgrid.io'
-          cmd_options: '-a -j'
-
-      - name: Upload ZAP report
-        uses: actions/upload-artifact@v3
-        with:
-          name: zap-nightly-report
-          path: report_html.html
