@@ -1,0 +1,1728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpsGrid — Live DevOps Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #181c24;
+    --border: #1e2430;
+    --border2: #252d3a;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --dim: #334155;
+    --green: #22c55e;
+    --green-dim: #14532d;
+    --green-glow: rgba(34,197,94,0.12);
+    --amber: #f59e0b;
+    --amber-dim: #78350f;
+    --red: #ef4444;
+    --red-dim: #7f1d1d;
+    --blue: #3b82f6;
+    --blue-dim: #1e3a5f;
+    --cyan: #06b6d4;
+    --cyan-dim: #164e63;
+    --purple: #a855f7;
+    --purple-dim: #3b1f6e;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-ui: 'Inter', sans-serif;
+    --radius: 6px;
+    --radius-lg: 10px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    height: 52px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .topbar-left { display: flex; align-items: center; gap: 20px; }
+
+  .logo {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .logo-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .env-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: var(--green-dim);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.2);
+    letter-spacing: 0.5px;
+  }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--green);
+  }
+
+  .live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.5s infinite;
+  }
+
+  /* ── NAV TABS ── */
+  .nav-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+
+  .nav-tab {
+    padding: 10px 16px;
+    font-size: 12px;
+    font-family: var(--font-ui);
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+    user-select: none;
+  }
+
+  .nav-tab:hover { color: var(--text); }
+  .nav-tab.active { color: var(--text); border-bottom-color: var(--blue); }
+
+  /* ── LAYOUT ── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  .main {
+    padding: 20px 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* ── STATS ROW ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .stat-card.green::before { background: var(--green); }
+  .stat-card.amber::before { background: var(--amber); }
+  .stat-card.red::before { background: var(--red); }
+  .stat-card.blue::before { background: var(--blue); }
+  .stat-card.cyan::before { background: var(--cyan); }
+  .stat-card.purple::before { background: var(--purple); }
+
+  .stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .stat-value {
+    font-size: 26px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .stat-sub {
+    font-size: 10px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+
+  .stat-card.green .stat-value { color: var(--green); }
+  .stat-card.amber .stat-value { color: var(--amber); }
+  .stat-card.red .stat-value { color: var(--red); }
+  .stat-card.blue .stat-value { color: var(--blue); }
+  .stat-card.cyan .stat-value { color: var(--cyan); }
+  .stat-card.purple .stat-value { color: var(--purple); }
+
+  /* ── GRID LAYOUTS ── */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .grid-main-side {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 900px) {
+    .grid-2, .grid-3, .grid-main-side { grid-template-columns: 1fr; }
+  }
+
+  /* ── PANEL ── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .panel-title-icon {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+
+  .panel-body { padding: 14px 16px; }
+
+  /* ── PIPELINE ── */
+  .pipeline-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .pipeline-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .pipeline-item:hover { border-color: var(--border2); }
+
+  .pipeline-item-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .pipeline-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .pipeline-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .pipeline-stages {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .stage {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    padding: 3px 7px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+
+  .stage-dot { width: 5px; height: 5px; border-radius: 50%; }
+  .stage-arrow { color: var(--dim); font-size: 8px; }
+
+  .stage.done { background: var(--green-dim); color: var(--green); }
+  .stage.done .stage-dot { background: var(--green); }
+  .stage.running { background: var(--blue-dim); color: var(--blue); }
+  .stage.running .stage-dot { background: var(--blue); animation: pulse 1s infinite; }
+  .stage.pending { background: var(--surface); color: var(--dim); border: 1px solid var(--border); }
+  .stage.pending .stage-dot { background: var(--dim); }
+  .stage.failed { background: var(--red-dim); color: var(--red); }
+  .stage.failed .stage-dot { background: var(--red); }
+
+  /* ── DURATION BAR ── */
+  .duration-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .duration-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 1s ease;
+  }
+
+  /* ── BADGE ── */
+  .badge {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.3px;
+    font-weight: 500;
+  }
+
+  .badge-green { background: var(--green-dim); color: var(--green); }
+  .badge-red { background: var(--red-dim); color: var(--red); }
+  .badge-amber { background: var(--amber-dim); color: var(--amber); }
+  .badge-blue { background: var(--blue-dim); color: var(--blue); }
+  .badge-cyan { background: var(--cyan-dim); color: var(--cyan); }
+  .badge-purple { background: var(--purple-dim); color: var(--purple); }
+  .badge-dim { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+
+  /* ── K8S POD TABLE ── */
+  .k8s-table { width: 100%; border-collapse: collapse; }
+  .k8s-table th {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+  }
+
+  .k8s-table td {
+    padding: 8px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: middle;
+  }
+
+  .k8s-table tr:last-child td { border-bottom: none; }
+  .k8s-table tr:hover td { background: var(--surface2); }
+
+  .pod-status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .pod-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── CPU BAR ── */
+  .cpu-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .cpu-bar {
+    flex: 1;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    min-width: 50px;
+  }
+
+  .cpu-fill { height: 100%; border-radius: 2px; }
+
+  /* ── SECURITY TABLE ── */
+  .sec-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .sec-tool {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+
+  .sec-tool-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .sec-tool-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+    font-family: var(--font-mono);
+  }
+
+  .sec-metrics { display: flex; flex-direction: column; gap: 5px; }
+
+  .sec-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    font-family: var(--font-mono);
+  }
+
+  .sec-row-label { color: var(--muted); }
+
+  /* ── SEVERITY PILL ── */
+  .sev { padding: 1px 6px; border-radius: 3px; font-size: 10px; font-family: var(--font-mono); }
+  .sev-critical { background: var(--red-dim); color: var(--red); }
+  .sev-high { background: var(--amber-dim); color: var(--amber); }
+  .sev-medium { background: var(--blue-dim); color: var(--blue); }
+  .sev-low { background: var(--green-dim); color: var(--green); }
+
+  /* ── LOG STREAM ── */
+  .log-stream {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--muted);
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .log-line { display: flex; gap: 10px; }
+  .log-time { color: var(--dim); flex-shrink: 0; }
+  .log-level { flex-shrink: 0; }
+  .log-msg { color: var(--text); }
+  .log-level.info { color: var(--blue); }
+  .log-level.warn { color: var(--amber); }
+  .log-level.error { color: var(--red); }
+  .log-level.ok { color: var(--green); }
+
+  /* ── TERRAFORM ── */
+  .tf-resource-list { display: flex; flex-direction: column; gap: 6px; }
+
+  .tf-resource {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .tf-resource-name { color: var(--text); }
+  .tf-resource-type { color: var(--muted); font-size: 10px; }
+
+  /* ── MINI SPARKLINE ── */
+  .sparkline {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 28px;
+  }
+
+  .spark-bar {
+    width: 4px;
+    border-radius: 1px;
+    transition: height 0.3s ease;
+  }
+
+  /* ── PROGRESS RING ── */
+  .ring-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px 0 8px;
+  }
+
+  .ring-label {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+
+  .rings-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  /* ── ALERTS ── */
+  .alert-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .alert-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: var(--radius);
+    font-size: 11px;
+  }
+
+  .alert-item.critical { border-left-color: var(--red); }
+  .alert-item.warning { border-left-color: var(--amber); }
+  .alert-item.info { border-left-color: var(--blue); }
+  .alert-item.resolved { border-left-color: var(--green); }
+
+  .alert-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+  .alert-content { flex: 1; }
+  .alert-title { font-weight: 500; color: var(--text); margin-bottom: 2px; }
+  .alert-body { color: var(--muted); font-size: 10px; font-family: var(--font-mono); }
+  .alert-time { font-family: var(--font-mono); font-size: 9px; color: var(--dim); flex-shrink: 0; }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  /* ── CHART CANVAS ── */
+  .chart-wrap {
+    position: relative;
+    padding: 14px 16px;
+  }
+
+  .chart-area {
+    width: 100%;
+    height: 100px;
+    position: relative;
+  }
+
+  svg.linechart { width: 100%; height: 100%; overflow: visible; }
+
+  /* ── COMMIT REF ── */
+  .commit-ref {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--blue);
+    background: var(--blue-dim);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ── NODE CARDS ── */
+  .node-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+
+  .node-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+  }
+
+  .node-name {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .node-role {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--purple-dim);
+    color: var(--purple);
+    font-family: var(--font-mono);
+  }
+
+  .node-metrics { display: flex; flex-direction: column; gap: 4px; }
+
+  .node-metric-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10px;
+    font-family: var(--font-mono);
+  }
+
+  .node-metric-label { color: var(--muted); }
+  .node-metric-val { color: var(--text); }
+
+  /* ── FOOTER ── */
+  .footer {
+    text-align: center;
+    padding: 24px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--dim);
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+  }
+
+  .footer a { color: var(--blue); text-decoration: none; }
+
+  /* ── SECTION TITLE ── */
+  .section-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── ANIMATED COUNTER ── */
+  .counting { transition: all 0.5s; }
+
+  /* ── JENKINS JOB LIST ── */
+  .job-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .job-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .job-left { display: flex; align-items: center; gap: 8px; }
+  .job-icon { font-size: 16px; }
+  .job-name { font-family: var(--font-mono); font-size: 11px; color: var(--text); }
+  .job-branch { font-family: var(--font-mono); font-size: 9px; color: var(--muted); }
+  .job-right { display: flex; align-items: center; gap: 8px; }
+  .job-duration { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+
+  /* running animation shimmer */
+  .shimmer {
+    background: linear-gradient(90deg, var(--blue-dim) 0%, var(--cyan-dim) 50%, var(--blue-dim) 100%);
+    background-size: 200%;
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% center; }
+    100% { background-position: -200% center; }
+  }
+
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">
+      <div class="logo-dot"></div>
+      OpsGrid
+    </div>
+    <span class="env-badge">PRODUCTION</span>
+    <span style="font-size:11px;color:var(--muted);font-family:var(--font-mono);">cluster: eks-prod-ap-south-1</span>
+  </div>
+  <div class="topbar-right">
+    <div class="live-indicator">
+      <div class="live-dot"></div>
+      LIVE
+    </div>
+    <span id="clock">—</span>
+    <span>IST</span>
+  </div>
+</div>
+
+<!-- NAV TABS -->
+<div class="nav-tabs">
+  <div class="nav-tab active" onclick="switchTab('overview')">Overview</div>
+  <div class="nav-tab" onclick="switchTab('pipelines')">CI/CD Pipelines</div>
+  <div class="nav-tab" onclick="switchTab('kubernetes')">Kubernetes</div>
+  <div class="nav-tab" onclick="switchTab('security')">Security &amp; Compliance</div>
+  <div class="nav-tab" onclick="switchTab('terraform')">Infrastructure</div>
+  <div class="nav-tab" onclick="switchTab('logs')">Live Logs</div>
+</div>
+
+<!-- ══════════════════════════════════ OVERVIEW ══════════════════════════════════ -->
+<div class="page active" id="page-overview">
+<div class="main">
+
+  <div class="stats-row">
+    <div class="stat-card green">
+      <div class="stat-label">Services Healthy</div>
+      <div class="stat-value counting" id="svc-count">12</div>
+      <div class="stat-sub">/ 12 total · all namespaces</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Pods Running</div>
+      <div class="stat-value counting" id="pod-count">47</div>
+      <div class="stat-sub">0 pending · 0 crashloop</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-label">Build Success Rate</div>
+      <div class="stat-value">96.2%</div>
+      <div class="stat-sub">last 30 days · 214 runs</div>
+    </div>
+    <div class="stat-card cyan">
+      <div class="stat-label">Deployments Today</div>
+      <div class="stat-value counting" id="deploy-count">8</div>
+      <div class="stat-sub">last deploy: 14m ago</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Security Issues</div>
+      <div class="stat-value">3</div>
+      <div class="stat-sub">2 medium · 1 low</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-label">Infra Resources</div>
+      <div class="stat-value">84</div>
+      <div class="stat-sub">terraform managed</div>
+    </div>
+  </div>
+
+  <!-- active pipelines + alerts -->
+  <div class="grid-main-side">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <div class="panel-title-icon" style="background:var(--blue);box-shadow:0 0 6px var(--blue);animation:pulse 1.5s infinite"></div>
+          Active Pipeline Runs
+        </div>
+        <span class="badge badge-blue">3 running</span>
+      </div>
+      <div class="panel-body">
+        <div class="pipeline-list" id="overview-pipelines"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <div class="panel-title-icon" style="background:var(--red)"></div>
+          Active Alerts
+        </div>
+        <span class="badge badge-red">2 open</span>
+      </div>
+      <div class="panel-body">
+        <div class="alert-list">
+          <div class="alert-item critical">
+            <div class="alert-icon">⚠</div>
+            <div class="alert-content">
+              <div class="alert-title">High CPU on payment-svc</div>
+              <div class="alert-body">pod/payment-svc-7f4d9b · cpu: 87% · threshold: 80%</div>
+            </div>
+            <div class="alert-time">4m ago</div>
+          </div>
+          <div class="alert-item warning">
+            <div class="alert-icon">⚡</div>
+            <div class="alert-content">
+              <div class="alert-title">Trivy scan: 1 medium CVE</div>
+              <div class="alert-body">image: api-gateway:v2.4.1 · CVE-2024-38396</div>
+            </div>
+            <div class="alert-time">22m ago</div>
+          </div>
+          <div class="alert-item info">
+            <div class="alert-icon">ℹ</div>
+            <div class="alert-content">
+              <div class="alert-title">Terraform drift detected</div>
+              <div class="alert-body">aws_security_group.rds-sg · 1 attribute changed</div>
+            </div>
+            <div class="alert-time">1h ago</div>
+          </div>
+          <div class="alert-item resolved">
+            <div class="alert-icon">✓</div>
+            <div class="alert-content">
+              <div class="alert-title">OOM Killer resolved</div>
+              <div class="alert-body">notification-svc restarted · limits increased</div>
+            </div>
+            <div class="alert-time">2h ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- resource utilization -->
+  <div class="grid-3">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Cluster CPU</div>
+        <span style="font-family:var(--font-mono);font-size:11px;color:var(--amber)">63%</span>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-area">
+          <svg class="linechart" viewBox="0 0 300 80" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="cpuGrad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="M0,55 L20,50 L40,45 L60,52 L80,38 L100,42 L120,35 L140,40 L160,30 L180,36 L200,28 L220,33 L240,29 L260,25 L280,29 L300,22" fill="none" stroke="#f59e0b" stroke-width="1.5"/>
+            <path d="M0,55 L20,50 L40,45 L60,52 L80,38 L100,42 L120,35 L140,40 L160,30 L180,36 L200,28 L220,33 L240,29 L260,25 L280,29 L300,22 L300,80 L0,80 Z" fill="url(#cpuGrad)"/>
+          </svg>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9px;color:var(--dim);margin-top:4px;">
+          <span>30m ago</span><span>now</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Cluster Memory</div>
+        <span style="font-family:var(--font-mono);font-size:11px;color:var(--blue)">71%</span>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-area">
+          <svg class="linechart" viewBox="0 0 300 80" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="memGrad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="M0,40 L20,38 L40,35 L60,33 L80,31 L100,30 L120,28 L140,26 L160,24 L180,22 L200,21 L220,23 L240,22 L260,20 L280,22 L300,21" fill="none" stroke="#3b82f6" stroke-width="1.5"/>
+            <path d="M0,40 L20,38 L40,35 L60,33 L80,31 L100,30 L120,28 L140,26 L160,24 L180,22 L200,21 L220,23 L240,22 L260,20 L280,22 L300,21 L300,80 L0,80 Z" fill="url(#memGrad)"/>
+          </svg>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9px;color:var(--dim);margin-top:4px;">
+          <span>30m ago</span><span>now</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Request Rate</div>
+        <span style="font-family:var(--font-mono);font-size:11px;color:var(--green)">2.4k/s</span>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-area">
+          <svg class="linechart" viewBox="0 0 300 80" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="rpsGrad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#22c55e" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="#22c55e" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="M0,45 L20,40 L40,43 L60,35 L80,38 L100,32 L120,36 L140,30 L160,34 L180,28 L200,32 L220,26 L240,30 L260,24 L280,28 L300,22" fill="none" stroke="#22c55e" stroke-width="1.5"/>
+            <path d="M0,45 L20,40 L40,43 L60,35 L80,38 L100,32 L120,36 L140,30 L160,34 L180,28 L200,32 L220,26 L240,30 L260,24 L280,28 L300,22 L300,80 L0,80 Z" fill="url(#rpsGrad)"/>
+          </svg>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9px;color:var(--dim);margin-top:4px;">
+          <span>30m ago</span><span>now</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════ PIPELINES ══════════════════════════════════ -->
+<div class="page" id="page-pipelines">
+<div class="main">
+
+  <div class="section-title">GitHub Actions</div>
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-header">
+      <div class="panel-title">
+        <div class="panel-title-icon" style="background:var(--green)"></div>
+        Workflow Runs · github.com/yourorg
+      </div>
+      <div style="display:flex;gap:8px;">
+        <span class="badge badge-green">3 passed</span>
+        <span class="badge badge-blue">1 running</span>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="pipeline-list" id="gha-pipelines"></div>
+    </div>
+  </div>
+
+  <div class="section-title">Jenkins</div>
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-header">
+      <div class="panel-title">
+        <div class="panel-title-icon" style="background:var(--amber)"></div>
+        Jenkins Jobs · jenkins.internal.opsgrid.io
+      </div>
+      <div style="display:flex;gap:8px;">
+        <span class="badge badge-amber">1 running</span>
+        <span class="badge badge-green">4 stable</span>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="job-list">
+        <div class="job-item">
+          <div class="job-left">
+            <div class="job-icon">🔵</div>
+            <div>
+              <div class="job-name">backend-api-deploy</div>
+              <div class="job-branch">main · build #312</div>
+            </div>
+          </div>
+          <div class="job-right">
+            <div class="job-duration">3m 12s</div>
+            <span class="badge badge-green">SUCCESS</span>
+          </div>
+        </div>
+        <div class="job-item" style="border-color:var(--blue);">
+          <div class="job-left">
+            <div class="job-icon">⚙</div>
+            <div>
+              <div class="job-name">integration-test-suite</div>
+              <div class="job-branch">develop · build #88</div>
+            </div>
+          </div>
+          <div class="job-right">
+            <div class="job-duration" id="jenkins-timer">2m 04s</div>
+            <span class="badge badge-blue">RUNNING</span>
+          </div>
+        </div>
+        <div class="job-item">
+          <div class="job-left">
+            <div class="job-icon">🟢</div>
+            <div>
+              <div class="job-name">frontend-build-push</div>
+              <div class="job-branch">main · build #201</div>
+            </div>
+          </div>
+          <div class="job-right">
+            <div class="job-duration">1m 47s</div>
+            <span class="badge badge-green">SUCCESS</span>
+          </div>
+        </div>
+        <div class="job-item">
+          <div class="job-left">
+            <div class="job-icon">🟠</div>
+            <div>
+              <div class="job-name">db-migration-runner</div>
+              <div class="job-branch">main · build #55</div>
+            </div>
+          </div>
+          <div class="job-right">
+            <div class="job-duration">0m 38s</div>
+            <span class="badge badge-amber">UNSTABLE</span>
+          </div>
+        </div>
+        <div class="job-item">
+          <div class="job-left">
+            <div class="job-icon">🟢</div>
+            <div>
+              <div class="job-name">notification-svc-deploy</div>
+              <div class="job-branch">release/v3.1 · build #44</div>
+            </div>
+          </div>
+          <div class="job-right">
+            <div class="job-duration">2m 21s</div>
+            <span class="badge badge-green">SUCCESS</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- deployment history -->
+  <div class="section-title">Recent Deployments</div>
+  <div class="panel">
+    <div class="panel-body" style="padding:0;">
+      <table class="k8s-table">
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Version</th>
+            <th>Environment</th>
+            <th>Deployed by</th>
+            <th>Duration</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>api-gateway</td><td><span class="commit-ref">v2.4.1</span></td><td><span class="badge badge-green">prod</span></td><td style="color:var(--muted)">github-actions</td><td style="color:var(--muted)">2m 11s</td><td><span class="badge badge-green">✓ deployed</span></td></tr>
+          <tr><td>payment-svc</td><td><span class="commit-ref">v1.9.7</span></td><td><span class="badge badge-green">prod</span></td><td style="color:var(--muted)">jenkins</td><td style="color:var(--muted)">3m 42s</td><td><span class="badge badge-green">✓ deployed</span></td></tr>
+          <tr><td>auth-service</td><td><span class="commit-ref">v3.2.0</span></td><td><span class="badge badge-blue">staging</span></td><td style="color:var(--muted)">github-actions</td><td style="color:var(--muted)">1m 58s</td><td><span class="badge badge-green">✓ deployed</span></td></tr>
+          <tr><td>order-service</td><td><span class="commit-ref">v2.1.4</span></td><td><span class="badge badge-green">prod</span></td><td style="color:var(--muted)">github-actions</td><td style="color:var(--muted)">4m 07s</td><td><span class="badge badge-green">✓ deployed</span></td></tr>
+          <tr><td>notification-svc</td><td><span class="commit-ref">v1.3.2</span></td><td><span class="badge badge-amber">qa</span></td><td style="color:var(--muted)">jenkins</td><td style="color:var(--muted)">1m 29s</td><td><span class="badge badge-amber">⚠ warning</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════ KUBERNETES ══════════════════════════════════ -->
+<div class="page" id="page-kubernetes">
+<div class="main">
+
+  <div class="stats-row">
+    <div class="stat-card green">
+      <div class="stat-label">Nodes Ready</div>
+      <div class="stat-value">6/6</div>
+      <div class="stat-sub">3 control-plane · 3 worker</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Namespaces</div>
+      <div class="stat-value">8</div>
+      <div class="stat-sub">prod · staging · qa · monitoring</div>
+    </div>
+    <div class="stat-card cyan">
+      <div class="stat-label">Services</div>
+      <div class="stat-value">24</div>
+      <div class="stat-sub">12 LoadBalancer · 12 ClusterIP</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-label">Cluster Version</div>
+      <div class="stat-value" style="font-size:18px;padding-top:4px;">1.29.4</div>
+      <div class="stat-sub">eks · ap-south-1</div>
+    </div>
+  </div>
+
+  <div class="section-title">Cluster Nodes</div>
+  <div class="node-grid" style="margin-bottom:16px;">
+    <div class="node-card">
+      <div class="node-name"><div style="width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;"></div>ip-10-0-1-101 <span class="node-role">control-plane</span></div>
+      <div class="node-metrics">
+        <div class="node-metric-row"><span class="node-metric-label">CPU</span><span class="node-metric-val">28%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Mem</span><span class="node-metric-val">52%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Pods</span><span class="node-metric-val">11/110</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Instance</span><span class="node-metric-val">m5.xlarge</span></div>
+      </div>
+    </div>
+    <div class="node-card">
+      <div class="node-name"><div style="width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;"></div>ip-10-0-1-102 <span class="node-role">control-plane</span></div>
+      <div class="node-metrics">
+        <div class="node-metric-row"><span class="node-metric-label">CPU</span><span class="node-metric-val">31%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Mem</span><span class="node-metric-val">49%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Pods</span><span class="node-metric-val">9/110</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Instance</span><span class="node-metric-val">m5.xlarge</span></div>
+      </div>
+    </div>
+    <div class="node-card">
+      <div class="node-name"><div style="width:6px;height:6px;border-radius:50%;background:var(--amber);flex-shrink:0;"></div>ip-10-0-2-201 <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--green-dim);color:var(--green);font-family:var(--font-mono);">worker</span></div>
+      <div class="node-metrics">
+        <div class="node-metric-row"><span class="node-metric-label">CPU</span><span class="node-metric-val" style="color:var(--amber)">87%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Mem</span><span class="node-metric-val">78%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Pods</span><span class="node-metric-val">22/110</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Instance</span><span class="node-metric-val">t3.2xlarge</span></div>
+      </div>
+    </div>
+    <div class="node-card">
+      <div class="node-name"><div style="width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;"></div>ip-10-0-2-202 <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--green-dim);color:var(--green);font-family:var(--font-mono);">worker</span></div>
+      <div class="node-metrics">
+        <div class="node-metric-row"><span class="node-metric-label">CPU</span><span class="node-metric-val">44%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Mem</span><span class="node-metric-val">61%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Pods</span><span class="node-metric-val">18/110</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Instance</span><span class="node-metric-val">t3.2xlarge</span></div>
+      </div>
+    </div>
+    <div class="node-card">
+      <div class="node-name"><div style="width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;"></div>ip-10-0-2-203 <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--green-dim);color:var(--green);font-family:var(--font-mono);">worker</span></div>
+      <div class="node-metrics">
+        <div class="node-metric-row"><span class="node-metric-label">CPU</span><span class="node-metric-val">52%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Mem</span><span class="node-metric-val">68%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Pods</span><span class="node-metric-val">19/110</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Instance</span><span class="node-metric-val">t3.2xlarge</span></div>
+      </div>
+    </div>
+    <div class="node-card">
+      <div class="node-name"><div style="width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;"></div>ip-10-0-1-103 <span class="node-role">control-plane</span></div>
+      <div class="node-metrics">
+        <div class="node-metric-row"><span class="node-metric-label">CPU</span><span class="node-metric-val">19%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Mem</span><span class="node-metric-val">41%</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Pods</span><span class="node-metric-val">8/110</span></div>
+        <div class="node-metric-row"><span class="node-metric-label">Instance</span><span class="node-metric-val">m5.xlarge</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">Pods — Namespace: prod</div>
+  <div class="panel">
+    <div class="panel-body" style="padding:0;">
+      <table class="k8s-table" id="pod-table">
+        <thead>
+          <tr>
+            <th>Pod Name</th>
+            <th>Namespace</th>
+            <th>Status</th>
+            <th>Restarts</th>
+            <th>CPU</th>
+            <th>Memory</th>
+            <th>Age</th>
+          </tr>
+        </thead>
+        <tbody id="pod-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════ SECURITY ══════════════════════════════════ -->
+<div class="page" id="page-security">
+<div class="main">
+
+  <div class="stats-row">
+    <div class="stat-card red">
+      <div class="stat-label">Critical CVEs</div>
+      <div class="stat-value">0</div>
+      <div class="stat-sub">trivy · all images</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-label">High CVEs</div>
+      <div class="stat-value">2</div>
+      <div class="stat-sub">trivy · patching scheduled</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Code Quality Gate</div>
+      <div class="stat-value" style="font-size:20px;padding-top:4px;">PASSED</div>
+      <div class="stat-sub">sonarqube · 6 services</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">OWASP ZAP</div>
+      <div class="stat-value" style="font-size:20px;padding-top:4px;">CLEAN</div>
+      <div class="stat-sub">0 high risks · last scan 1h ago</div>
+    </div>
+  </div>
+
+  <div class="sec-grid" style="margin-bottom:16px;">
+    <!-- SonarQube -->
+    <div class="sec-tool">
+      <div class="sec-tool-header">
+        <div class="sec-tool-name">SonarQube</div>
+        <span class="badge badge-green">GATE PASSED</span>
+      </div>
+      <div class="sec-metrics">
+        <div class="sec-row"><span class="sec-row-label">Coverage</span><span style="color:var(--green)">84.3%</span></div>
+        <div class="sec-row"><span class="sec-row-label">Bugs</span><span style="color:var(--green)">0</span></div>
+        <div class="sec-row"><span class="sec-row-label">Vulnerabilities</span><span style="color:var(--green)">0</span></div>
+        <div class="sec-row"><span class="sec-row-label">Code Smells</span><span style="color:var(--amber)">14</span></div>
+        <div class="sec-row"><span class="sec-row-label">Duplications</span><span>3.2%</span></div>
+        <div class="sec-row"><span class="sec-row-label">Tech Debt</span><span style="color:var(--muted)">2h 14m</span></div>
+      </div>
+    </div>
+
+    <!-- Trivy -->
+    <div class="sec-tool">
+      <div class="sec-tool-header">
+        <div class="sec-tool-name">Trivy</div>
+        <span class="badge badge-amber">2 HIGH</span>
+      </div>
+      <div class="sec-metrics">
+        <div class="sec-row"><span class="sec-row-label">Images scanned</span><span>12</span></div>
+        <div class="sec-row"><span class="sec-row-label">Critical</span><span style="color:var(--green)">0</span></div>
+        <div class="sec-row"><span class="sec-row-label">High</span><span style="color:var(--amber)">2</span></div>
+        <div class="sec-row"><span class="sec-row-label">Medium</span><span style="color:var(--blue)">5</span></div>
+        <div class="sec-row"><span class="sec-row-label">Low</span><span style="color:var(--muted)">18</span></div>
+        <div class="sec-row"><span class="sec-row-label">Last scan</span><span style="color:var(--muted)">14m ago</span></div>
+      </div>
+    </div>
+
+    <!-- OWASP ZAP -->
+    <div class="sec-tool">
+      <div class="sec-tool-header">
+        <div class="sec-tool-name">OWASP ZAP</div>
+        <span class="badge badge-green">CLEAN</span>
+      </div>
+      <div class="sec-metrics">
+        <div class="sec-row"><span class="sec-row-label">Endpoints tested</span><span>47</span></div>
+        <div class="sec-row"><span class="sec-row-label">High risk</span><span style="color:var(--green)">0</span></div>
+        <div class="sec-row"><span class="sec-row-label">Medium risk</span><span style="color:var(--blue)">2</span></div>
+        <div class="sec-row"><span class="sec-row-label">Low risk</span><span style="color:var(--muted)">7</span></div>
+        <div class="sec-row"><span class="sec-row-label">False positive</span><span style="color:var(--dim)">3</span></div>
+        <div class="sec-row"><span class="sec-row-label">Scan mode</span><span style="color:var(--muted)">active</span></div>
+      </div>
+    </div>
+
+    <!-- Snyk / Dependency -->
+    <div class="sec-tool">
+      <div class="sec-tool-header">
+        <div class="sec-tool-name">Dependency Check</div>
+        <span class="badge badge-green">PASSED</span>
+      </div>
+      <div class="sec-metrics">
+        <div class="sec-row"><span class="sec-row-label">Dependencies</span><span>324</span></div>
+        <div class="sec-row"><span class="sec-row-label">Vulnerable</span><span style="color:var(--amber)">3</span></div>
+        <div class="sec-row"><span class="sec-row-label">Suppressed</span><span style="color:var(--muted)">1</span></div>
+        <div class="sec-row"><span class="sec-row-label">CVSS &gt;= 7.0</span><span style="color:var(--green)">0</span></div>
+        <div class="sec-row"><span class="sec-row-label">Tool</span><span style="color:var(--muted)">owasp dep-check</span></div>
+        <div class="sec-row"><span class="sec-row-label">Report</span><span style="color:var(--blue)">HTML ↗</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CVE table -->
+  <div class="section-title">CVE Details</div>
+  <div class="panel">
+    <div class="panel-body" style="padding:0;">
+      <table class="k8s-table">
+        <thead>
+          <tr><th>CVE ID</th><th>Package</th><th>Severity</th><th>Image</th><th>Fixed In</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="color:var(--blue);font-family:var(--font-mono)">CVE-2024-38396</td>
+            <td>openssl 3.1.4</td>
+            <td><span class="sev sev-high">HIGH</span></td>
+            <td style="color:var(--muted)">api-gateway:v2.4.1</td>
+            <td style="color:var(--green)">3.1.5</td>
+            <td><span class="badge badge-amber">patching</span></td>
+          </tr>
+          <tr>
+            <td style="color:var(--blue);font-family:var(--font-mono)">CVE-2024-28219</td>
+            <td>Pillow 10.0.1</td>
+            <td><span class="sev sev-high">HIGH</span></td>
+            <td style="color:var(--muted)">image-svc:v1.2.0</td>
+            <td style="color:var(--green)">10.3.0</td>
+            <td><span class="badge badge-blue">scheduled</span></td>
+          </tr>
+          <tr>
+            <td style="color:var(--blue);font-family:var(--font-mono)">CVE-2024-21501</td>
+            <td>sanitize-html 2.11</td>
+            <td><span class="sev sev-medium">MED</span></td>
+            <td style="color:var(--muted)">frontend:v3.0.1</td>
+            <td style="color:var(--green)">2.12.1</td>
+            <td><span class="badge badge-amber">patching</span></td>
+          </tr>
+          <tr>
+            <td style="color:var(--blue);font-family:var(--font-mono)">CVE-2023-45853</td>
+            <td>zlib 1.2.13</td>
+            <td><span class="sev sev-medium">MED</span></td>
+            <td style="color:var(--muted)">payment-svc:v1.9.7</td>
+            <td style="color:var(--green)">1.3.1</td>
+            <td><span class="badge badge-green">fixed</span></td>
+          </tr>
+          <tr>
+            <td style="color:var(--blue);font-family:var(--font-mono)">CVE-2024-22365</td>
+            <td>linux-pam 1.5.2</td>
+            <td><span class="sev sev-low">LOW</span></td>
+            <td style="color:var(--muted)">auth-service:v3.2.0</td>
+            <td style="color:var(--green)">1.5.3</td>
+            <td><span class="badge badge-dim">accepted</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════ TERRAFORM ══════════════════════════════════ -->
+<div class="page" id="page-terraform">
+<div class="main">
+
+  <div class="stats-row">
+    <div class="stat-card green">
+      <div class="stat-label">Resources Managed</div>
+      <div class="stat-value">84</div>
+      <div class="stat-sub">in sync with state</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-label">Drift Detected</div>
+      <div class="stat-value">1</div>
+      <div class="stat-sub">aws_security_group.rds-sg</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Workspaces</div>
+      <div class="stat-value">4</div>
+      <div class="stat-sub">prod · staging · qa · dev</div>
+    </div>
+    <div class="stat-card cyan">
+      <div class="stat-label">Last Apply</div>
+      <div class="stat-value" style="font-size:16px;padding-top:6px;">42m ago</div>
+      <div class="stat-sub">by github-actions · plan #217</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">AWS Resource Inventory</div>
+        <span class="badge badge-green">84 resources</span>
+      </div>
+      <div class="panel-body">
+        <div class="tf-resource-list">
+          <div class="tf-resource"><div><div class="tf-resource-name">eks-prod-ap-south-1</div><div class="tf-resource-type">aws_eks_cluster</div></div><span class="badge badge-green">active</span></div>
+          <div class="tf-resource"><div><div class="tf-resource-name">vpc-opsgrid-prod</div><div class="tf-resource-type">aws_vpc · 10.0.0.0/16</div></div><span class="badge badge-green">active</span></div>
+          <div class="tf-resource"><div><div class="tf-resource-name">rds-postgres-prod</div><div class="tf-resource-type">aws_db_instance · db.r6g.large</div></div><span class="badge badge-green">active</span></div>
+          <div class="tf-resource"><div><div class="tf-resource-name">elasticache-redis-prod</div><div class="tf-resource-type">aws_elasticache_cluster</div></div><span class="badge badge-green">active</span></div>
+          <div class="tf-resource"><div><div class="tf-resource-name">alb-prod-external</div><div class="tf-resource-type">aws_lb · internet-facing</div></div><span class="badge badge-green">active</span></div>
+          <div class="tf-resource"><div><div class="tf-resource-name">s3-artifacts-opsgrid</div><div class="tf-resource-type">aws_s3_bucket · versioned</div></div><span class="badge badge-green">active</span></div>
+          <div class="tf-resource" style="border-color:var(--amber)"><div><div class="tf-resource-name">aws_security_group.rds-sg</div><div class="tf-resource-type">aws_security_group · ⚠ drift</div></div><span class="badge badge-amber">drift</span></div>
+          <div class="tf-resource"><div><div class="tf-resource-name">ecr-opsgrid-prod</div><div class="tf-resource-type">aws_ecr_repository · 12 repos</div></div><span class="badge badge-green">active</span></div>
+          <div class="tf-resource"><div><div class="tf-resource-name">cloudwatch-alarms</div><div class="tf-resource-type">aws_cloudwatch_metric_alarm · 24</div></div><span class="badge badge-green">active</span></div>
+          <div class="tf-resource"><div><div class="tf-resource-name">iam-eks-node-role</div><div class="tf-resource-type">aws_iam_role · attached 4 policies</div></div><span class="badge badge-green">active</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel" style="margin-bottom:16px;">
+        <div class="panel-header">
+          <div class="panel-title">Recent Plan Output</div>
+          <span class="badge badge-dim">plan #217</span>
+        </div>
+        <div class="panel-body" style="padding:0;">
+          <div class="log-stream" style="padding:12px 14px;max-height:200px;">
+            <div class="log-line"><span class="log-time">14:32:01</span><span class="log-level ok">PLAN</span><span class="log-msg">Refreshing state... (84 resources)</span></div>
+            <div class="log-line"><span class="log-time">14:32:04</span><span class="log-level info">DIFF</span><span class="log-msg">aws_security_group.rds-sg: 1 attr changed</span></div>
+            <div class="log-line"><span class="log-time">14:32:04</span><span class="log-level warn">WARN</span><span class="log-msg">ingress port 5432 opened outside of Terraform</span></div>
+            <div class="log-line"><span class="log-time">14:32:05</span><span class="log-level ok">INFO</span><span class="log-msg">Plan: 0 to add, 1 to change, 0 to destroy</span></div>
+            <div class="log-line"><span class="log-time">14:32:10</span><span class="log-level ok">APPLY</span><span class="log-msg">aws_security_group.rds-sg: Modifying...</span></div>
+            <div class="log-line"><span class="log-time">14:32:13</span><span class="log-level ok">OK</span><span class="log-msg">aws_security_group.rds-sg: Modifications complete</span></div>
+            <div class="log-line"><span class="log-time">14:32:13</span><span class="log-level ok">OK</span><span class="log-msg">Apply complete! 1 changed, 0 errors.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Cost Estimate (monthly)</div>
+          <span class="badge badge-dim">infracost</span>
+        </div>
+        <div class="panel-body">
+          <div class="sec-metrics">
+            <div class="sec-row"><span class="sec-row-label">EKS cluster</span><span style="color:var(--text)">$146.00</span></div>
+            <div class="sec-row"><span class="sec-row-label">EC2 nodes (6)</span><span style="color:var(--text)">$388.40</span></div>
+            <div class="sec-row"><span class="sec-row-label">RDS postgres</span><span style="color:var(--text)">$192.50</span></div>
+            <div class="sec-row"><span class="sec-row-label">ElastiCache</span><span style="color:var(--text)">$68.30</span></div>
+            <div class="sec-row"><span class="sec-row-label">ALB + data</span><span style="color:var(--text)">$42.10</span></div>
+            <div class="sec-row" style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px;"><span style="color:var(--text);font-weight:500;">Total</span><span style="color:var(--green);font-weight:500;">$837.30 / mo</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════ LOGS ══════════════════════════════════ -->
+<div class="page" id="page-logs">
+<div class="main">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <select id="log-ns" style="font-family:var(--font-mono);font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:var(--radius);">
+        <option>prod</option><option>staging</option><option>qa</option><option>monitoring</option>
+      </select>
+      <select id="log-svc" style="font-family:var(--font-mono);font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:var(--radius);">
+        <option>all services</option><option>api-gateway</option><option>payment-svc</option><option>auth-service</option><option>order-service</option>
+      </select>
+    </div>
+    <div class="live-indicator" style="font-family:var(--font-mono);font-size:11px;">
+      <div class="live-dot"></div>
+      streaming
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <div class="panel-title-icon" style="background:var(--green);animation:pulse 1.5s infinite"></div>
+        Log Stream
+      </div>
+      <span class="badge badge-dim" id="log-count">0 lines</span>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <div class="log-stream" style="padding:12px 14px;max-height:500px;" id="live-log-stream">
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<div class="footer">
+  Built with Kubernetes 1.29 · Terraform 1.7 · GitHub Actions · Jenkins · SonarQube · Trivy · OWASP ZAP · AWS EKS ap-south-1
+  <br>
+  <span style="color:var(--dim)">Live portfolio project ·</span>
+  <a href="https://github.com/yourorg/opsgrid" target="_blank">github.com/yourorg/opsgrid</a>
+</div>
+
+<script>
+// ── CLOCK ──
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-IN', { hour12: false, timeZone: 'Asia/Kolkata' });
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ── TAB SWITCHING ──
+function switchTab(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ── PIPELINE DATA ──
+const pipelineData = [
+  {
+    name: 'api-gateway / build-deploy.yml',
+    ref: 'a3f2d91',
+    branch: 'main',
+    trigger: 'push',
+    stages: [
+      { name: 'checkout', state: 'done' },
+      { name: 'sonar', state: 'done' },
+      { name: 'docker build', state: 'done' },
+      { name: 'trivy scan', state: 'done' },
+      { name: 'push ECR', state: 'done' },
+      { name: 'deploy EKS', state: 'done' },
+    ],
+    progress: 100, color: '#22c55e', duration: '4m 12s', status: 'success'
+  },
+  {
+    name: 'payment-svc / ci-pipeline.yml',
+    ref: 'b9e1c44',
+    branch: 'main',
+    trigger: 'push',
+    stages: [
+      { name: 'checkout', state: 'done' },
+      { name: 'sonar', state: 'done' },
+      { name: 'docker build', state: 'done' },
+      { name: 'trivy scan', state: 'done' },
+      { name: 'push ECR', state: 'running' },
+      { name: 'deploy EKS', state: 'pending' },
+    ],
+    progress: 72, color: '#3b82f6', duration: '2m 38s', status: 'running'
+  },
+  {
+    name: 'auth-service / release-staging.yml',
+    ref: 'c7a8f02',
+    branch: 'release/v3.2',
+    trigger: 'manual',
+    stages: [
+      { name: 'checkout', state: 'done' },
+      { name: 'sonar', state: 'done' },
+      { name: 'docker build', state: 'running' },
+      { name: 'trivy scan', state: 'pending' },
+      { name: 'push ECR', state: 'pending' },
+      { name: 'deploy EKS', state: 'pending' },
+    ],
+    progress: 38, color: '#3b82f6', duration: '1m 14s', status: 'running'
+  },
+  {
+    name: 'order-service / nightly-scan.yml',
+    ref: 'd2b3e55',
+    branch: 'develop',
+    trigger: 'schedule',
+    stages: [
+      { name: 'checkout', state: 'done' },
+      { name: 'sonar', state: 'done' },
+      { name: 'owasp', state: 'done' },
+      { name: 'dep-check', state: 'done' },
+      { name: 'report', state: 'done' },
+    ],
+    progress: 100, color: '#22c55e', duration: '6m 01s', status: 'success'
+  },
+];
+
+function renderPipeline(p) {
+  const stagesHtml = p.stages.map((s, i) => {
+    const arrow = i < p.stages.length - 1 ? '<span class="stage-arrow">›</span>' : '';
+    return `<div class="stage ${s.state}"><div class="stage-dot"></div>${s.name}</div>${arrow}`;
+  }).join('');
+
+  const statusBadge = p.status === 'success'
+    ? '<span class="badge badge-green">✓ passed</span>'
+    : p.status === 'running'
+    ? '<span class="badge badge-blue">⟳ running</span>'
+    : '<span class="badge badge-red">✗ failed</span>';
+
+  return `
+    <div class="pipeline-item">
+      <div class="pipeline-item-top">
+        <div class="pipeline-name">${p.name}</div>
+        <div class="pipeline-meta">
+          <span class="commit-ref">${p.ref}</span>
+          <span>${p.branch}</span>
+          <span>${p.trigger}</span>
+          <span>${p.duration}</span>
+          ${statusBadge}
+        </div>
+      </div>
+      <div class="pipeline-stages">${stagesHtml}</div>
+      <div class="duration-bar">
+        <div class="duration-fill" style="width:${p.progress}%;background:${p.color}"></div>
+      </div>
+    </div>`;
+}
+
+// Render overview pipelines (running only)
+const ovPipelines = pipelineData.filter(p => p.status === 'running');
+document.getElementById('overview-pipelines').innerHTML = ovPipelines.map(renderPipeline).join('');
+
+// Render GHA tab all pipelines
+document.getElementById('gha-pipelines').innerHTML = pipelineData.map(renderPipeline).join('');
+
+// ── POD DATA ──
+const pods = [
+  { name: 'api-gateway-74d9f-x8kzp', ns: 'prod', status: 'Running', restarts: 0, cpu: 28, mem: 41 },
+  { name: 'api-gateway-74d9f-m2nqr', ns: 'prod', status: 'Running', restarts: 0, cpu: 31, mem: 38 },
+  { name: 'payment-svc-7f4d9b-p9wlm', ns: 'prod', status: 'Running', restarts: 1, cpu: 87, mem: 74, cpuAlert: true },
+  { name: 'payment-svc-7f4d9b-k3qzt', ns: 'prod', status: 'Running', restarts: 0, cpu: 52, mem: 61 },
+  { name: 'auth-service-5c8b2-r7vxn', ns: 'prod', status: 'Running', restarts: 0, cpu: 19, mem: 32 },
+  { name: 'order-service-6b3f1-j4mws', ns: 'prod', status: 'Running', restarts: 0, cpu: 44, mem: 55 },
+  { name: 'order-service-6b3f1-t9pkd', ns: 'prod', status: 'Running', restarts: 0, cpu: 38, mem: 49 },
+  { name: 'notification-svc-2e7c4-b5hxq', ns: 'prod', status: 'Running', restarts: 3, cpu: 12, mem: 28 },
+  { name: 'image-svc-9d1a3-n8fwp', ns: 'prod', status: 'Running', restarts: 0, cpu: 8, mem: 19 },
+  { name: 'frontend-8c5e2-q2tkr', ns: 'prod', status: 'Running', restarts: 0, cpu: 5, mem: 14 },
+  { name: 'coredns-7d4b8-xpqmv', ns: 'kube-system', status: 'Running', restarts: 0, cpu: 3, mem: 11 },
+  { name: 'prometheus-0', ns: 'monitoring', status: 'Running', restarts: 0, cpu: 22, mem: 48 },
+];
+
+function cpuColor(v) { return v > 75 ? 'var(--red)' : v > 50 ? 'var(--amber)' : 'var(--green)'; }
+function cpuBarColor(v) { return v > 75 ? '#ef4444' : v > 50 ? '#f59e0b' : '#22c55e'; }
+
+const ages = ['2d', '2d', '2d', '2d', '5d', '5d', '5d', '5d', '8d', '3d', '12d', '7d'];
+const podTbody = document.getElementById('pod-tbody');
+podTbody.innerHTML = pods.map((p, i) => `
+  <tr>
+    <td><span class="pod-status"><div class="pod-dot" style="background:${p.restarts > 2 ? 'var(--amber)' : 'var(--green)'}"></div>${p.name}</span></td>
+    <td style="color:var(--muted)">${p.ns}</td>
+    <td><span class="badge ${p.status === 'Running' ? 'badge-green' : 'badge-amber'}">${p.status}</span></td>
+    <td style="color:${p.restarts > 2 ? 'var(--amber)' : p.restarts > 0 ? 'var(--muted)' : 'var(--dim)';}">${p.restarts}</td>
+    <td>
+      <div class="cpu-bar-wrap">
+        <div class="cpu-bar"><div class="cpu-fill" style="width:${p.cpu}%;background:${cpuBarColor(p.cpu)}"></div></div>
+        <span style="color:${cpuColor(p.cpu)};font-family:var(--font-mono);font-size:10px;min-width:28px;">${p.cpu}%</span>
+      </div>
+    </td>
+    <td>
+      <div class="cpu-bar-wrap">
+        <div class="cpu-bar"><div class="cpu-fill" style="width:${p.mem}%;background:var(--blue)"></div></div>
+        <span style="color:var(--blue);font-family:var(--font-mono);font-size:10px;min-width:28px;">${p.mem}%</span>
+      </div>
+    </td>
+    <td style="color:var(--muted)">${ages[i]}</td>
+  </tr>
+`).join('');
+
+// ── LIVE LOG STREAM ──
+const logTemplates = [
+  { level: 'info', msgs: [
+    'GET /api/v1/orders 200 OK (12ms)',
+    'POST /api/v1/payments 201 Created (84ms)',
+    'Auth token validated for user:u9f3d',
+    'Cache HIT redis:session:a7c2b',
+    'Webhook dispatched: order.completed',
+    'Health check /healthz 200 OK (1ms)',
+    'ECR image pull: api-gateway:v2.4.1',
+    'ConfigMap mounted: app-config-v3',
+    'Rolling update: payment-svc 2/4 pods ready',
+    'HPA scaling: order-service 3 → 4 replicas',
+    'PVC bound: postgres-data-prod-0 10Gi',
+  ]},
+  { level: 'warn', msgs: [
+    'Slow query detected: 1240ms (threshold 1000ms)',
+    'Retry attempt 2/3 for payment gateway',
+    'Rate limit approaching: 87% of 1000 req/min',
+    'Pod ip-10-0-2-201 CPU throttling detected',
+    'Certificate expires in 14 days: *.opsgrid.io',
+    'Memory pressure on node ip-10-0-2-201',
+  ]},
+  { level: 'error', msgs: [
+    'Connection timeout: redis.prod.internal:6379',
+    'Liveness probe failed: notification-svc (restarting)',
+  ]},
+  { level: 'ok', msgs: [
+    'Trivy scan PASSED: order-service:v2.1.4',
+    'SonarQube gate PASSED: auth-service (coverage 84.3%)',
+    'Deployment complete: api-gateway:v2.4.1 → prod',
+    'Terraform apply complete: 1 resource updated',
+  ]},
+];
+
+const services = ['api-gateway', 'payment-svc', 'auth-service', 'order-service', 'notification-svc', 'eks-controller'];
+let logCount = 0;
+const logStream = document.getElementById('live-log-stream');
+
+function addLog() {
+  const pool = Math.random() < 0.65 ? logTemplates[0]
+    : Math.random() < 0.6 ? logTemplates[1]
+    : Math.random() < 0.5 ? logTemplates[2]
+    : logTemplates[3];
+
+  const msgs = pool.msgs;
+  const msg = msgs[Math.floor(Math.random() * msgs.length)];
+  const svc = services[Math.floor(Math.random() * services.length)];
+  const now = new Date();
+  const ts = now.toLocaleTimeString('en-IN', { hour12: false, timeZone: 'Asia/Kolkata' });
+
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-time">${ts}</span><span class="log-level ${pool.level}">${pool.level.toUpperCase()}</span><span style="color:var(--cyan);min-width:120px">${svc}</span><span class="log-msg">${msg}</span>`;
+  logStream.appendChild(line);
+  logCount++;
+  document.getElementById('log-count').textContent = logCount + ' lines';
+  // Keep max 120 lines
+  while (logStream.children.length > 120) logStream.removeChild(logStream.firstChild);
+  logStream.scrollTop = logStream.scrollHeight;
+}
+
+// Start log stream after small delay
+setTimeout(() => {
+  // Seed with 20 lines
+  for (let i = 0; i < 20; i++) addLog();
+  setInterval(addLog, 800);
+}, 300);
+
+// ── JENKINS TIMER ──
+let jenkinsSeconds = 124;
+setInterval(() => {
+  jenkinsSeconds++;
+  const m = Math.floor(jenkinsSeconds / 60);
+  const s = jenkinsSeconds % 60;
+  const el = document.getElementById('jenkins-timer');
+  if (el) el.textContent = m + 'm ' + String(s).padStart(2, '0') + 's';
+}, 1000);
+
+// ── ANIMATE COUNTERS ──
+function animateCounter(id, target) {
+  let current = 0;
+  const el = document.getElementById(id);
+  if (!el) return;
+  const step = Math.ceil(target / 30);
+  const timer = setInterval(() => {
+    current = Math.min(current + step, target);
+    el.textContent = current;
+    if (current >= target) clearInterval(timer);
+  }, 40);
+}
+
+animateCounter('svc-count', 12);
+animateCounter('pod-count', 47);
+animateCounter('deploy-count', 8);
+
+// ── SIMULATE LIVE PIPELINE PROGRESS ──
+let paymentProgress = 72;
+setInterval(() => {
+  if (paymentProgress < 100) {
+    paymentProgress = Math.min(paymentProgress + 0.3, 100);
+  }
+}, 500);
+</script>
+</body>
+</html>
