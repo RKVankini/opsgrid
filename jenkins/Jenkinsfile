@@ -1,0 +1,204 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml '''
+                apiVersion: v1
+                kind: Pod
+                spec:
+                  containers:
+                  - name: docker
+                    image: docker:24-dind
+                    securityContext:
+                      privileged: true
+                  - name: kubectl
+                    image: bitnami/kubectl:1.29
+                    command: ["sleep", "infinity"]
+                  - name: trivy
+                    image: aquasec/trivy:latest
+                    command: ["sleep", "infinity"]
+            '''
+        }
+    }
+
+    environment {
+        AWS_REGION      = 'ap-south-1'
+        ECR_REGISTRY    = credentials('ecr-registry-url')
+        SONAR_HOST      = credentials('sonar-host-url')
+        SONAR_TOKEN     = credentials('sonar-token')
+        SLACK_WEBHOOK   = credentials('slack-webhook')
+        EKS_CLUSTER     = 'eks-prod-ap-south-1'
+        SERVICE         = 'backend-api'
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timestamps()
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_SHORT_SHA = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    env.IMAGE_TAG     = "${env.ECR_REGISTRY}/${env.SERVICE}:${env.GIT_SHORT_SHA}"
+                }
+                echo "Building ${env.SERVICE}:${env.GIT_SHORT_SHA}"
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                sh '''
+                    pip install -r requirements.txt
+                    pytest tests/unit/ --junitxml=test-results/unit.xml --cov=src --cov-report=xml
+                '''
+            }
+            post {
+                always {
+                    junit 'test-results/unit.xml'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh '''
+                        sonar-scanner \
+                          -Dsonar.projectKey=${SERVICE} \
+                          -Dsonar.sources=src \
+                          -Dsonar.python.coverage.reportPaths=coverage.xml \
+                          -Dsonar.host.url=${SONAR_HOST} \
+                          -Dsonar.login=${SONAR_TOKEN}
+                    '''
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                container('docker') {
+                    sh "docker build -t ${env.IMAGE_TAG} ."
+                }
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                container('trivy') {
+                    sh """
+                        trivy image \
+                          --exit-code 1 \
+                          --severity CRITICAL \
+                          --format table \
+                          ${env.IMAGE_TAG}
+                    """
+                    sh """
+                        trivy image \
+                          --exit-code 0 \
+                          --severity HIGH,MEDIUM,LOW \
+                          --format json \
+                          --output trivy-report.json \
+                          ${env.IMAGE_TAG}
+                    """
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'trivy-report.json', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Push to ECR') {
+            steps {
+                container('docker') {
+                    withAWS(credentials: 'aws-credentials', region: env.AWS_REGION) {
+                        sh """
+                            aws ecr get-login-password --region ${env.AWS_REGION} | \
+                            docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
+
+                            docker push ${env.IMAGE_TAG}
+                            docker tag ${env.IMAGE_TAG} ${env.ECR_REGISTRY}/${env.SERVICE}:latest
+                            docker push ${env.ECR_REGISTRY}/${env.SERVICE}:latest
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to EKS') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('kubectl') {
+                    withAWS(credentials: 'aws-credentials', region: env.AWS_REGION) {
+                        sh """
+                            aws eks update-kubeconfig \
+                              --region ${env.AWS_REGION} \
+                              --name ${env.EKS_CLUSTER}
+
+                            kubectl set image deployment/${env.SERVICE} \
+                              ${env.SERVICE}=${env.IMAGE_TAG} \
+                              -n prod
+
+                            kubectl rollout status deployment/${env.SERVICE} \
+                              -n prod \
+                              --timeout=300s
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Integration Tests') {
+            when {
+                branch 'main'
+            }
+            steps {
+                sh '''
+                    pytest tests/integration/ \
+                      --junitxml=test-results/integration.xml \
+                      -v
+                '''
+            }
+            post {
+                always {
+                    junit 'test-results/integration.xml'
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            slackSend(
+                color: 'good',
+                message: "✅ *${env.SERVICE}* build #${env.BUILD_NUMBER} deployed to prod\nCommit: `${env.GIT_SHORT_SHA}` | Branch: `${env.BRANCH_NAME}`\n<${env.BUILD_URL}|View Build>",
+                webhookSecret: env.SLACK_WEBHOOK
+            )
+        }
+        failure {
+            slackSend(
+                color: 'danger',
+                message: "❌ *${env.SERVICE}* build #${env.BUILD_NUMBER} FAILED\nBranch: `${env.BRANCH_NAME}`\n<${env.BUILD_URL}|View Logs>",
+                webhookSecret: env.SLACK_WEBHOOK
+            )
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
